@@ -1,37 +1,42 @@
 ﻿using AK;
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
+using Dissonance.Audio.Codecs;
 using HarmonyLib;
 using LevelGeneration;
 using Localization;
+using Player;
+using SNetwork;
 
 namespace FridosSmartPing
 {
     [BepInPlugin("com.fridos.smartping", "FridosSmartPing", "1.1.0")]
     public class SmartPing : BasePlugin
     {
-        public static List<LG_GenericTerminalItem> itemList = new List<LG_GenericTerminalItem>();
-        public static List<LG_GenericTerminalItem> pickedItemList = new List<LG_GenericTerminalItem>();
+        public static List<ItemInLevel> itemList = new();
         public Harmony HarmonyInstance { get; private set; }
 
         public static void Initialize()
         {
             itemList.Clear();
-            pickedItemList.Clear();
-            Logger.Error("Init SmartPing and preparing.");
-            foreach (LG_GenericTerminalItem item in UnityEngine.Object.FindObjectsOfType<LG_GenericTerminalItem>())
+            Logger.Info("Init SmartPing and preparing.");
+            foreach (ItemInLevel item in UnityEngine.Object.FindObjectsOfType<ItemInLevel>())
             {
-                iTerminalItem component = item.GetComponent<iTerminalItem>();
                 if (item != null)
                 {
-                    var name = item.TerminalItemKey;
-                    if (name != null)
+                    Logger.Error("Component: " + item.PublicName);
+                    LG_GenericTerminalItem component = item.GetComponentInChildren<LG_GenericTerminalItem>();
+                    if (component != null)
                     {
-                        if (name.Contains("PACK") || name.StartsWith("TOOL_REFILL") ||
-                            name.StartsWith("KEY_") || name.StartsWith("PID_") || name.StartsWith("BULKHEAD_KEY_") ||
-                            name.StartsWith("DATA_CUBE_") || name.StartsWith("CELL_"))
+                        var name = component.TerminalItemKey;
+                        if (name != null)
                         {
-                            itemList.Add(item);
+                            if (name.Contains("PACK") || name.StartsWith("TOOL_REFILL") ||
+                                name.StartsWith("KEY_") || name.StartsWith("PID_") || name.StartsWith("BULKHEAD_KEY_") ||
+                                name.StartsWith("DATA_CUBE_") || name.StartsWith("CELL_"))
+                            {
+                                itemList.Add(item);
+                            }
                         }
                     }
                 }
@@ -40,7 +45,7 @@ namespace FridosSmartPing
         public override void Load()
         {
             // Plugin startup logic
-            Log.LogInfo("Fridos Smart Ping enabled!");
+            Logger.Info("Fridos Smart Ping enabled!");
 
             HarmonyInstance = new Harmony("com.fridos.smartping");
             HarmonyInstance.PatchAll();
@@ -48,140 +53,141 @@ namespace FridosSmartPing
         }
     }
 
-    [HarmonyPatch(typeof(LG_PickupItem_Sync), nameof(LG_PickupItem_Sync.AttemptInteract))]
-    public class OnPickupDeleteItemPatch
-    {
-        static void Prefix(LG_PickupItem_Sync __instance, pPickupItemInteraction interaction)
-        {
-            //SYNC LISTS
-            if (interaction.type.ToString() == "Pickup") //IGNORE QUEST ITEMS
-            {
-                LG_GenericTerminalItem itemToRemove = new LG_GenericTerminalItem();
-                bool foundItem = false;
-                foreach (LG_GenericTerminalItem item in SmartPing.itemList)
-                {
-                    if (__instance.name.Contains(item.TerminalItemKey))
-                    {
-                        itemToRemove = item;
-                        foundItem = true;
-                        break;
-                    }
-                }
-                if (foundItem)
-                {
-                    SmartPing.pickedItemList.Add(itemToRemove);
-                    foreach(NavMarker nM in GuiManager.NavMarkerLayer.m_markersActive)
-                    {
-                        if (nM != null)
-                        {
-                            if (nM.m_title != null && nM.m_title.text != null)
-                            {
-                                if (__instance.name.Contains(nM.m_title.text) && !__instance.name.Contains("CELL"))
-                                {
-                                    nM.SetVisible(false);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    SmartPing.itemList.Remove(itemToRemove);
-                }
-            }
-            else if (interaction.type.ToString() == "Place")
-            {
-                bool foundItem = false;
-                LG_GenericTerminalItem itemToRemove = new LG_GenericTerminalItem();
-                foreach (LG_GenericTerminalItem item in SmartPing.pickedItemList)
-                {
-                    if (__instance.name.Contains(item.TerminalItemKey))
-                    {
-                        itemToRemove = item;
-                        foundItem = true;
-                        SmartPing.itemList.Add(item);
-                    }
-                }
-                if (foundItem)
-                {
-                    SmartPing.pickedItemList.Remove(itemToRemove);
-                }
-            }
-        }
-    }
     [HarmonyPatch(typeof(LG_ComputerTerminalCommandInterpreter), nameof(LG_ComputerTerminalCommandInterpreter.SetupCommands))]
     public class SmartPingPatch
     {
         static void Postfix(LG_ComputerTerminalCommandInterpreter __instance) {
             __instance.AddCommand(TERM_Command.InvalidCommand, "SMARTPING", new LocalizedText
             {
-                UntranslatedText = "Ping an item inside the current zone to get its location",
+                UntranslatedText = "Ping items inside the current zone",
                 Id = 0u
             },TERM_CommandRule.Normal);
         }
     }
+    [HarmonyPatch(typeof(ItemInLevel), nameof(ItemInLevel.OnPickedUp))]
+    public class RemoveNavMarkerPatch
+    {
+        static void Postfix(ItemInLevel __instance, PlayerAgent player, InventorySlot slot, AmmoType ammoType)
+        {
+            if(SNet.IsMaster)
+            {
+                Logger.Error("HOST IDENTIFIED");
+                LG_GenericTerminalItem component = __instance.GetComponentInChildren<LG_GenericTerminalItem>();
+                if (component != null)
+                {
+                    var name = component.TerminalItemKey;
+                    if (name != null)
+                    {
+                        foreach (NavMarker nM in GuiManager.NavMarkerLayer.m_markersActive)
+                        {
+                            if (nM != null)
+                            {
+                                if (nM.m_title != null && nM.m_title.text != null)
+                                {
+                                    if (nM.m_title.text.Contains(component.TerminalItemKey))
+                                    {
+                                        nM.SetVisible(false);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+    }
     [HarmonyPatch(typeof(LG_ComputerTerminalCommandInterpreter), nameof(LG_ComputerTerminalCommandInterpreter.ReceiveCommand))]
     public class SmartPingOverridePatch
     {
-        static bool Prefix(LG_ComputerTerminalCommandInterpreter __instance, TERM_Command cmd, string inputLine, string param1, string param2)
+            static bool Prefix(LG_ComputerTerminalCommandInterpreter __instance, TERM_Command cmd, string inputLine, string param1, string param2)
         {
             if (inputLine.Contains("SMARTPING"))
             {
+                Logger.Error("SMARTPING TRIGGERED");
                 __instance.m_linesSinceCommand = 0;
                 __instance.m_terminal.IsWaitingForAnyKeyInLinePause = false;
-
-                __instance.AddOutput("", true);
-                __instance.AddOutput(TerminalLineType.ProgressWait, "Initalizing Fridos Smart Ping™...", 5f, TerminalSoundType.LineTypeDefault, TerminalSoundType.LineTypeDefault);
+                __instance.AddOutput(__instance.NewLineStart() + inputLine, false);
+                __instance.AddOutput(__instance.NewLineStart() + "   ______                                      __      _______   __                     ", false);
+                __instance.AddOutput(__instance.NewLineStart() + "  /      \\                                    |  \\    |       \\ |  \\                    ", false);
+                __instance.AddOutput(__instance.NewLineStart() + " |  $$$$$$\\ ______ ____    ______    ______  _| $$_   | $$$$$$$\\ \\$$ _______    ______  ", false);
+                __instance.AddOutput(__instance.NewLineStart() + " | $$___\\$$|      \\    \\  |      \\  /      \\|   $$ \\  | $$__/ $$|  \\|       \\  /      \\ ", false);
+                __instance.AddOutput(__instance.NewLineStart() + "  \\$$    \\ | $$$$$$\\$$$$\\  \\$$$$$$\\|  $$$$$$\\\\$$$$$$  | $$    $$| $$| $$$$$$$\\|  $$$$$$\\", false);
+                __instance.AddOutput(__instance.NewLineStart() + "  _\\$$$$$$\\| $$ | $$ | $$ /      $$| $$   \\$$ | $$ __ | $$$$$$$ | $$| $$  | $$| $$  | $$", false);
+                __instance.AddOutput(__instance.NewLineStart() + " |  \\__| $$| $$ | $$ | $$|  $$$$$$$| $$       | $$|  \\| $$      | $$| $$  | $$| $$__| $$", false);
+                __instance.AddOutput(__instance.NewLineStart() + "  \\$$    $$| $$ | $$ | $$ \\$$    $$| $$        \\$$  $$| $$      | $$| $$  | $$ \\$$    $$", false);
+                __instance.AddOutput(__instance.NewLineStart() + "   \\$$$$$$  \\$$  \\$$  \\$$  \\$$$$$$$ \\$$         \\$$$$  \\$$       \\$$ \\$$   \\$$ _\\$$$$$$$", false);
+                __instance.AddOutput(__instance.NewLineStart() + "                                                                              |  \\__| $$", false);
+                __instance.AddOutput(__instance.NewLineStart() + "          by LolBit & Frido                                                    \\$$    $$", false);
+                __instance.AddOutput(__instance.NewLineStart() + "                                                                                \\$$$$$$ ", false);
+                __instance.AddOutput(__instance.NewLineStart(), false);
+                __instance.AddOutput(TerminalLineType.ProgressWait, __instance.NewLineStart() + "Initalizing Fridos Smart Ping™...", 5f, TerminalSoundType.LineTypeDefault, TerminalSoundType.LineTypeDefault);
                 __instance.OnEndOfQueue = new Action(delegate ()
                 {
                     int pingedItems = 0;
-                    foreach (LG_GenericTerminalItem item in SmartPing.itemList)
+                    foreach (ItemInLevel item in SmartPing.itemList)
                     {
-                        Logger.Error("Getting Zone");
-                        var current_zone = "ZONE_" + __instance.m_terminal.SpawnNode.m_zone.NavInfo.Number;
-                        Logger.Error("Getting Key");
-                        var name = item.TerminalItemKey;
-                        Logger.Error("Cheking"); 
-                        if (current_zone == item.FloorItemLocation && (name.Contains("PACK") || name.StartsWith("TOOL_REFILL") || 
-                            name.StartsWith("KEY_") || name.StartsWith("PID_") || name.StartsWith("BULKHEAD_KEY_") ||
-                            name.StartsWith("DATA_CUBE_") || name.StartsWith("CELL_") || name.StartsWith("GLP_") || 
-                            name.StartsWith("PD_") || name.StartsWith("OSIP_") || name.StartsWith("HDD_")) && !item.WasCollected)
+                        if (item.internalSync.GetCurrentState().status != ePickupItemStatus.PickedUp)
                         {
-                            CellSound.Post(EVENTS.TERMINAL_PING_MARKER_SFX, item.transform.position);
-                            Logger.Error("Getting Marker");
-                            NavMarker m_marker = GuiManager.NavMarkerLayer.PrepareGenericMarker(item.gameObject);
-                            Logger.Error("Marker made.");
-                            m_marker.PersistentBetweenRestarts = false;
-                            m_marker.SetTitle(name);
-                            Logger.Error("Getting asdasd");
-                            if (name.StartsWith("MEDIPACK"))
+                            Logger.Error("Getting Zone");
+                            var current_zone = "ZONE_" + __instance.m_terminal.SpawnNode.m_zone.NavInfo.Number;
+                            var terminalItem = item.GetComponentInChildren<LG_GenericTerminalItem>();
+                            var name = terminalItem.TerminalItemKey;
+                            try
                             {
-                                m_marker.SetStyle(eNavMarkerStyle.PlayerPingHealth);
+                                if (current_zone == terminalItem.FloorItemLocation && item.internalSync.GetCurrentState().status != ePickupItemStatus.PickedUp &&
+                                    (name.Contains("PACK") || name.StartsWith("TOOL_REFILL") ||
+                                    name.StartsWith("KEY_") || name.StartsWith("PID_") || name.StartsWith("BULKHEAD_KEY_") ||
+                                    name.StartsWith("DATA_CUBE_") || name.StartsWith("CELL_") || name.StartsWith("GLP_") ||
+                                    name.StartsWith("PD_") || name.StartsWith("OSIP_") || name.StartsWith("HDD_")))
+                                {
+                                    Logger.Error("Getting Marker");
+                                    NavMarker m_marker = GuiManager.NavMarkerLayer.PrepareGenericMarker(item.gameObject);
+                                    m_marker.PersistentBetweenRestarts = false;
+                                    if(item.GetCustomData().ammo >= 20)
+                                    {
+                                        m_marker.SetTitle(name + "\n(" + item.GetCustomData().ammo / 20 + " Uses)");
+                                    } else
+                                    {
+                                        m_marker.SetTitle(name);
+                                    }
+                                    if (name.StartsWith("MEDIPACK"))
+                                    {
+                                        m_marker.SetStyle(eNavMarkerStyle.PlayerPingHealth);
+                                    }
+                                    else if (name.StartsWith("AMMOPACK"))
+                                    {
+                                        m_marker.SetStyle(eNavMarkerStyle.PlayerPingAmmo);
+                                    }
+                                    else if (name.StartsWith("TOOL_REFILL"))
+                                    {
+                                        m_marker.SetStyle(eNavMarkerStyle.PlayerPingToolRefill);
+                                    }
+                                    else if (name.StartsWith("DISINFECT_PACK"))
+                                    {
+                                        m_marker.SetStyle(eNavMarkerStyle.PlayerPingDisinfection);
+                                    }
+                                    else
+                                    {
+                                        m_marker.SetStyle(eNavMarkerStyle.PlayerPingLoot);
+                                    }
+                                    m_marker.SetIconScale(0.4f);
+                                    m_marker.SetAlpha(0.4f);
+                                    m_marker.SetVisible(true);
+                                    m_marker.FadeOutOverTime(20, 10);
+                                    m_marker.m_fadeRoutine = CoroutineManager.StartCoroutine(GuiManager.NavMarkerLayer.FadeMarkerOverTime(m_marker, m_marker.name, UnityEngine.Random.Range(0.1f, 0.5f), 30f, false), null);
+                                    pingedItems += 1;
+                                }
                             }
-                            else if (name.StartsWith("AMMOPACK"))
+                            catch (Exception e)
                             {
-                                m_marker.SetStyle(eNavMarkerStyle.PlayerPingAmmo);
+                                Logger.Error(e);
                             }
-                            else if (name.StartsWith("TOOL_REFILL"))
-                            {
-                                m_marker.SetStyle(eNavMarkerStyle.PlayerPingToolRefill);
-                            }
-                            else if (name.StartsWith("DISINFECT_PACK"))
-                            {
-                                m_marker.SetStyle(eNavMarkerStyle.PlayerPingDisinfection);
-                            }
-                            else
-                            {
-                                m_marker.SetStyle(eNavMarkerStyle.TerminalPing);
-                            }
-                            m_marker.SetIconScale(0.4f);
-                            m_marker.SetAlpha(0.4f);
-                            m_marker.SetVisible(true);
-                            m_marker.FadeOutOverTime(20, 10);
-                            m_marker.m_fadeRoutine = CoroutineManager.StartCoroutine(GuiManager.NavMarkerLayer.FadeMarkerOverTime(m_marker, m_marker.name, UnityEngine.Random.Range(0.1f, 0.5f), 30f, false), null);
-                            pingedItems += 1;
                         }
                     }
-                    __instance.AddOutput("Fridos Smart Ping™ has finished and pinged a total of " + pingedItems + " items.", false);
-                    __instance.AddOutput(__instance.NewLineStart() + inputLine, false);
+                    CellSound.Post(EVENTS.TERMINAL_PING_MARKER_SFX, __instance.m_terminal.transform.position);
+                    __instance.AddOutput(__instance.NewLineStart() + "Fridos Smart Ping™ has finished and pinged a total of " + pingedItems + " items.", false);
                 });
                 return false;
             }
