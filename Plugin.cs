@@ -33,7 +33,7 @@ namespace FridosSmartPing
                         {
                             if (name.Contains("PACK") || name.StartsWith("TOOL_REFILL") ||
                                 name.StartsWith("KEY_") || name.StartsWith("PID_") || name.StartsWith("BULKHEAD_KEY_") ||
-                                name.StartsWith("DATA_CUBE_") || name.StartsWith("CELL_"))
+                                name.StartsWith("DATA_CUBE_") || name.StartsWith("CELL_") || name.StartsWith("FOG_TURBINE"))
                             {
                                 itemList.Add(item);
                             }
@@ -87,6 +87,7 @@ namespace FridosSmartPing
                                     if (nM.m_title.text.Contains(component.TerminalItemKey))
                                     {
                                         nM.SetVisible(false);
+                                        nM.m_currentState = NavMarkerState.Inactive;
                                         break;
                                     }
                                 }
@@ -140,7 +141,7 @@ namespace FridosSmartPing
                                     (name.Contains("PACK") || name.StartsWith("TOOL_REFILL") ||
                                     name.StartsWith("KEY_") || name.StartsWith("PID_") || name.StartsWith("BULKHEAD_KEY_") ||
                                     name.StartsWith("DATA_CUBE_") || name.StartsWith("CELL_") || name.StartsWith("GLP_") ||
-                                    name.StartsWith("PD_") || name.StartsWith("OSIP_") || name.StartsWith("HDD_")))
+                                    name.StartsWith("PD_") || name.StartsWith("OSIP_") || name.StartsWith("HDD_") || name.StartsWith("FOG_TURBINE")))
                                 {
                                     Logger.Error("Getting Marker");
                                     NavMarker m_marker = GuiManager.NavMarkerLayer.PrepareGenericMarker(item.gameObject);
