@@ -1,16 +1,13 @@
 ﻿using AK;
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
-using Dissonance.Audio.Codecs;
 using HarmonyLib;
 using LevelGeneration;
 using Localization;
-using Player;
-using SNetwork;
 
 namespace FridosSmartPing
 {
-    [BepInPlugin("com.fridos.smartping", "FridosSmartPing", "1.1.0")]
+    [BepInPlugin("com.fridos.smartping", "FridosSmartPing", "1.2.1")]
     public class SmartPing : BasePlugin
     {
         public static List<ItemInLevel> itemList = new();
@@ -24,7 +21,6 @@ namespace FridosSmartPing
             {
                 if (item != null)
                 {
-                    Logger.Error("Component: " + item.PublicName);
                     LG_GenericTerminalItem component = item.GetComponentInChildren<LG_GenericTerminalItem>();
                     if (component != null)
                     {
@@ -64,14 +60,13 @@ namespace FridosSmartPing
             },TERM_CommandRule.Normal);
         }
     }
-    [HarmonyPatch(typeof(ItemInLevel), nameof(ItemInLevel.OnPickedUp))]
+    /*[HarmonyPatch(typeof(ItemInLevel), nameof(ItemInLevel.OnPickedUp))]
     public class RemoveNavMarkerPatch
     {
         static void Postfix(ItemInLevel __instance, PlayerAgent player, InventorySlot slot, AmmoType ammoType)
         {
             if(SNet.IsMaster)
             {
-                Logger.Error("HOST IDENTIFIED");
                 LG_GenericTerminalItem component = __instance.GetComponentInChildren<LG_GenericTerminalItem>();
                 if (component != null)
                 {
@@ -98,7 +93,7 @@ namespace FridosSmartPing
             }
         }
 
-    }
+    }*/
     [HarmonyPatch(typeof(LG_ComputerTerminalCommandInterpreter), nameof(LG_ComputerTerminalCommandInterpreter.ReceiveCommand))]
     public class SmartPingOverridePatch
     {
@@ -106,7 +101,6 @@ namespace FridosSmartPing
         {
             if (inputLine.Contains("SMARTPING"))
             {
-                Logger.Error("SMARTPING TRIGGERED");
                 __instance.m_linesSinceCommand = 0;
                 __instance.m_terminal.IsWaitingForAnyKeyInLinePause = false;
                 __instance.AddOutput(__instance.NewLineStart() + inputLine, false);
@@ -131,19 +125,17 @@ namespace FridosSmartPing
                     {
                         if (item.internalSync.GetCurrentState().status != ePickupItemStatus.PickedUp)
                         {
-                            Logger.Error("Getting Zone");
                             var current_zone = "ZONE_" + __instance.m_terminal.SpawnNode.m_zone.NavInfo.Number;
                             var terminalItem = item.GetComponentInChildren<LG_GenericTerminalItem>();
                             var name = terminalItem.TerminalItemKey;
                             try
                             {
                                 if (current_zone == terminalItem.FloorItemLocation && item.internalSync.GetCurrentState().status != ePickupItemStatus.PickedUp &&
-                                    (name.Contains("PACK") || name.StartsWith("TOOL_REFILL") ||
+                                    (name.Contains("PACK") || name.StartsWith("TOOL_REFILL") || name.StartsWith("CARGO_") ||
                                     name.StartsWith("KEY_") || name.StartsWith("PID_") || name.StartsWith("BULKHEAD_KEY_") ||
                                     name.StartsWith("DATA_CUBE_") || name.StartsWith("CELL_") || name.StartsWith("GLP_") ||
                                     name.StartsWith("PD_") || name.StartsWith("OSIP_") || name.StartsWith("HDD_") || name.StartsWith("FOG_TURBINE")))
                                 {
-                                    Logger.Error("Getting Marker");
                                     NavMarker m_marker = GuiManager.NavMarkerLayer.PrepareGenericMarker(item.gameObject);
                                     m_marker.PersistentBetweenRestarts = false;
                                     if(item.GetCustomData().ammo >= 20)
