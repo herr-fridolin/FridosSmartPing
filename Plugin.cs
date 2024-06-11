@@ -7,7 +7,7 @@ using Localization;
 
 namespace FridosSmartPing
 {
-    [BepInPlugin("com.fridos.smartping", "FridosSmartPing", "1.2.1")]
+    [BepInPlugin("com.fridos.smartping", "FridosSmartPing", "1.2.2")]
     public class SmartPing : BasePlugin
     {
         public static List<ItemInLevel> itemList = new();
